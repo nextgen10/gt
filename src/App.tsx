@@ -27,7 +27,6 @@ const setValue = (obj: any, path: (string | number)[], value: any): any => {
   const [head, ...tail] = path;
   if (Array.isArray(obj)) {
     const newArr = [...obj];
-    // @ts-ignore
     newArr[head] = setValue(obj[head], tail, value);
     return newArr;
   }
@@ -45,15 +44,11 @@ const removeValue = (obj: any, path: (string | number)[]): any => {
   }
   if (Array.isArray(obj)) {
     const newArr = [...obj];
-    // @ts-ignore
     newArr[head] = removeValue(obj[head], tail);
     return newArr;
   }
   return { ...obj, [head]: removeValue(obj[head], tail) };
 };
-
-// --- Helper: Flatten JSON for Excel ---
-
 
 // --- Components ---
 
@@ -66,7 +61,7 @@ const DynamicField = ({
   onRename,
   hideHeader,
   level = 0,
-  forceExpandState, // null = no force, true = expand all, false = collapse all
+  forceExpandState,
   highlightedPath,
   setHighlightedPath
 }: {
@@ -87,27 +82,21 @@ const DynamicField = ({
   const isObject = value !== null && typeof value === 'object' && !isArray;
   const isPrimitive = !isArray && !isObject;
 
-  // Determine if we should render as a table (Array of Objects)
   const isTableMode = isArray && value.length > 0 &&
     value.every((item: any) => item !== null && typeof item === 'object' && !Array.isArray(item));
 
-  // State for adding new field to Object
   const [isAdding, setIsAdding] = useState(false);
   const [newKey, setNewKey] = useState("");
   const [newType, setNewType] = useState("string");
 
-  // State for collapse/expand
-  // Default: Root (level 0) expanded, others collapsed
   const [isExpanded, setIsExpanded] = useState(level === 0);
 
-  // React to Force Expand/Collapse signals
   useEffect(() => {
     if (forceExpandState !== null && forceExpandState !== undefined) {
       setIsExpanded(forceExpandState);
     }
   }, [forceExpandState]);
 
-  // State for editing key name
   const [isEditingKey, setIsEditingKey] = useState(false);
   const [editedKey, setEditedKey] = useState(String(label));
 
@@ -120,13 +109,8 @@ const DynamicField = ({
     if (!isArray) return;
     let newItem: any = "";
     if (value.length > 0) {
-      // Clone structure
       const cloneStructure = (item: any): any => {
         if (Array.isArray(item)) {
-          // If the array has items, we want to preserve the structure of the inner items
-          // by creating an array with ONE blank template item.
-          // This ensures nested arrays (like 'countries' inside 'regions') don't become empty []
-          // which would lose the schema effectively blocking further additions.
           if (item.length > 0) {
             return [cloneStructure(item[0])];
           }
@@ -144,8 +128,6 @@ const DynamicField = ({
     onChange(path, [...value, newItem]);
     if (setHighlightedPath) {
       setHighlightedPath([...path, value.length]);
-      // Also expand the parent (current array) so the new item is visible? 
-      // Current component is the array field itself. It must be expanded to see children.
       setIsExpanded(true);
     }
   };
@@ -205,7 +187,6 @@ const DynamicField = ({
             className="field-label select-none"
             style={{ cursor: isPrimitive ? 'default' : 'pointer', flex: 1, display: 'flex', alignItems: 'center' }}
             onClick={(e) => {
-              // Allow toggling by clicking the label area for non-primitives
               if (!isPrimitive) {
                 e.preventDefault();
                 setIsExpanded(!isExpanded);
@@ -221,7 +202,6 @@ const DynamicField = ({
               </span>
             )}
 
-            {/* Editable Label */}
             {isEditingKey ? (
               <input
                 autoFocus
@@ -229,7 +209,6 @@ const DynamicField = ({
                 value={editedKey}
                 onChange={(e) => setEditedKey(e.target.value)}
                 onBlur={() => {
-                  // Trigger rename
                   if (onRename) onRename(editedKey);
                   setIsEditingKey(false);
                 }}
@@ -244,14 +223,13 @@ const DynamicField = ({
                   }
                 }}
                 className="input py-0 px-1 h-6 text-sm w-32"
-                onClick={(e) => e.stopPropagation()} // Prevent collapse
+                onClick={(e) => e.stopPropagation()}
               />
             ) : (
               <span
                 className="font-medium text-slate-200 hover:text-white cursor-text border-b border-transparent hover:border-slate-500 transition-colors"
                 title="Click to rename key"
                 onClick={(e) => {
-                  // Only allow editing keys if onRename is present (i.e. we are in an object)
                   if (onRename) {
                     e.preventDefault();
                     setIsEditingKey(true);
@@ -262,7 +240,6 @@ const DynamicField = ({
               </span>
             )}
 
-            {/* Only show badge if header is shown */}
             <span className="type-badge ml-2">{getTypeLabel()}</span>
           </label>
 
@@ -289,7 +266,6 @@ const DynamicField = ({
         </div>
       )}
 
-      {/* Mini-Header for toggle when standard header is hidden */}
       {hideHeader && !isPrimitive && (
         <div className="flex items-center gap-2 mb-1">
           <button
@@ -344,24 +320,15 @@ const DynamicField = ({
                   value={val}
                   path={[...path, key]}
                   onChange={onChange}
-
-                  // NEW: Pass onRename prop
                   onRename={(newKeyName) => {
                     if (newKeyName === key) return;
                     if (!newKeyName.trim()) return;
-                    // Determine if key already exists?
                     if (Object.keys(value).includes(newKeyName)) {
                       alert("Key already exists!");
                       return;
                     }
-
                     const newObj = { ...value };
-                    // Preserve order if possible, or just add new key/value
-                    // To rename, we delete old and add new with same value.
-                    // Ideally we want to keep position.
                     const keys = Object.keys(newObj);
-
-                    // Reconstruct object to maintain order
                     const orderedObj: any = {};
                     keys.forEach((k) => {
                       if (k === key) {
@@ -370,10 +337,8 @@ const DynamicField = ({
                         orderedObj[k] = newObj[k];
                       }
                     });
-
                     onChange(path, orderedObj);
                   }}
-
                   onRemove={onRemove ? undefined : () => {
                     const newObj = { ...value };
                     delete newObj[key];
@@ -386,7 +351,6 @@ const DynamicField = ({
                 />
               ))}
 
-              {/* ... existing Add Field UI ... */}
               {isAdding ? (
                 <div className="add-field-row">
                   <input
@@ -436,7 +400,6 @@ const DynamicField = ({
                 <table className="json-table">
                   <thead>
                     <tr>
-                      {/* Gather all unique keys from all objects to form headers */}
                       {Array.from(new Set(value.flatMap((item: any) => Object.keys(item)))).map(key => {
                         const sampleVal = value.find((v: any) => v && v[key] !== undefined && v[key] !== null) as any;
                         const typeOfKey = sampleVal ? typeof sampleVal[key] : 'any';
@@ -521,7 +484,6 @@ const DynamicField = ({
 };
 
 
-// --- Helper Component for Root Object Adder ---
 const RootObjectAdder = ({ onChange, rootData, setHighlightedPath }: { onChange: any, rootData: any, setHighlightedPath: any }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [newKey, setNewKey] = useState("");
@@ -614,10 +576,6 @@ function App() {
       const parsed = JSON.parse(jsonInput);
       setParsedData(parsed);
       setError(null);
-      // Logic: If initial load, maybe default expandable? 
-      // But user requested "collapse everything in form when we add new json".
-      // So on initial load or subsequent updates, we might want to default to collapse?
-      // Actually usually "add new json" implies manual paste.
     } catch (e) {
       if (e instanceof Error) setError(e.message);
     }
@@ -630,7 +588,6 @@ function App() {
       const parsed = JSON.parse(newVal);
       setParsedData(parsed);
       setError(null);
-      // Auto-collapse on new valid JSON
       setForceExpandState(false);
     } catch (e) {
       if (e instanceof Error) setError(e.message);
@@ -659,17 +616,13 @@ function App() {
     } catch (e) { /* ignore */ }
   };
 
-  // --- Helper: Generate Hierarchical Rows for Excel ---
-
-
   const handleExportExcel = async () => {
     if (!parsedData) return;
 
-    // --- INTERNAL GENERATOR ---
     type ExcelRow = {
       type: 'field' | 'table-header' | 'table-col-headers' | 'table-row';
       path: string;
-      label: string; // Display Key
+      label: string;
       value?: any;
       headers?: string[];
       values?: any[];
@@ -678,26 +631,19 @@ function App() {
 
     const rows: ExcelRow[] = [];
 
-    // Traverse: obj, fullPath, displayKey, level
     const traverse = (obj: any, path: string, key: string, level: number) => {
-      // 1. Check for Table (Array of Objects)
       const isTable = Array.isArray(obj) && obj.length > 0 &&
         obj.every((i: any) => i && typeof i === 'object' && !Array.isArray(i));
 
       if (isTable) {
-        // A. Table Block Header (Key Name)
         rows.push({ type: 'table-header', path: path, label: key, level });
 
-        // B. Calculate Columns
         const keys = new Set<string>();
         obj.forEach((row: any) => Object.keys(row).forEach(k => keys.add(k)));
         const colHeaders = Array.from(keys);
 
-        // C. Column Headers Row (Indent + 1)
-        // We don't really have a label for this row, it uses col headers.
         rows.push({ type: 'table-col-headers', path: '', label: '', headers: colHeaders, level: level + 1 });
 
-        // D. Data Rows
         obj.forEach((rowObj: any, rowIndex: number) => {
           const rowVals = colHeaders.map(k => {
             const val = rowObj[k];
@@ -706,24 +652,11 @@ function App() {
             }
             return val;
           });
-          // Table Rows are at level + 1 (indented under the table header)
           rows.push({ type: 'table-row', path: '', label: '', values: rowVals, level: level + 1 });
 
-          // E. Recurse for Complex Children
           Object.entries(rowObj).forEach(([k, v]) => {
             if (v && typeof v === 'object') {
               const childPath = path ? `${path}.${rowIndex}.${k}` : `${rowIndex}.${k}`;
-              // Recursive tables/objects start at level + 2 (under the row, conceptually)
-              // Or maybe just level + 1 if we treat them as siblings to the row content?
-              // "YAML" style:
-              // - Item 1
-              //   key: val
-              //   regions:
-              //     ...
-              // Let's use level + 1 relative to the Row, so Level + 2 total.
-              // But we need a parent label for the deep object? Currently we use 'k'.
-              // Wait, `traverse` expects `key`.
-              // We need to render the key `k` as the header for the next block.
               traverse(v, childPath, k, level + 2);
             }
           });
@@ -731,26 +664,17 @@ function App() {
         return;
       }
 
-      // 2. Standard Traversal
       if (Array.isArray(obj)) {
         obj.forEach((v: any, i: number) => {
-          // For Arrays, key is usually index, but in YAML lists are hyphenated "-".
-          // We'll use "- (Index)" or just "-".
           traverse(v, path ? `${path}.${i}` : `${i}`, `Item ${i + 1}`, level);
         });
         return;
       }
 
       if (obj && typeof obj === 'object') {
-        // If this is a nested object, we need a separate "Header Row" for the object Key
-        // UNLESS it's the root or we are already inside a recursive call that pushed the key?
-        // In `traverse`, we are processing `obj`. `key` is passed in.
-        // If it's the Root, we might not want a row.
-        // If it's a nested object field, we usually want: `Key:` row, then children indented.
-
         if (key && key !== 'Root') {
           rows.push({ type: 'table-header', path: path, label: key, level });
-          level++; // Indent children
+          level++;
         }
 
         Object.entries(obj).forEach(([k, v]) => {
@@ -759,39 +683,31 @@ function App() {
         return;
       }
 
-      // 3. Primitive Field
       rows.push({ type: 'field', path: path, label: key, value: obj, level });
     };
 
-    // Start
     traverse(parsedData, '', '', 0);
 
-    // --- RENDER TO EXCEL ---
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("Data", { views: [{ showGridLines: false }] });
 
-    // Header Row (Main)
     const mainHeader = worksheet.addRow(['Structure', 'Value']);
     mainHeader.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 12 };
     mainHeader.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
     mainHeader.height = 30;
 
-    // Configure Outline
     worksheet.properties.outlineProperties = { summaryBelow: false, summaryRight: false };
 
-    // Process Rows
     rows.forEach(r => {
       let row: ExcelJS.Row;
-
-      // Indentation String (2 spaces per level)
       const indentStr = "  ".repeat(r.level);
 
       if (r.type === 'field') {
-        row = worksheet.addRow([indentStr + r.label, r.value]); // Indented Label
+        row = worksheet.addRow([indentStr + r.label, r.value]);
 
         const pathCell = row.getCell(1);
         pathCell.font = { color: { argb: 'FF374151' }, bold: true };
-        pathCell.alignment = { vertical: 'middle' }; // No alignment indent, using spaces
+        pathCell.alignment = { vertical: 'middle' };
 
         const valCell = row.getCell(2);
         valCell.alignment = { vertical: 'middle', wrapText: true };
@@ -809,7 +725,6 @@ function App() {
       }
 
       else if (r.type === 'table-header') {
-        // Just the Key Name (Section Header)
         row = worksheet.addRow([indentStr + r.label]);
         const cell = row.getCell(1);
         cell.font = { size: 12, bold: true, color: { argb: 'FF111827' } };
@@ -818,9 +733,6 @@ function App() {
       }
 
       else if (r.type === 'table-col-headers') {
-        // [Empty/Indent, ...Headers]
-        // Alignment: Col 1 is empty indentation. Headers start at Col 2.
-        // Actually, if we use space-indentation, we can just put empty string in Col 1.
         row = worksheet.addRow(['', ...(r.headers || [])]);
         row.eachCell((cell, colNum) => {
           if (colNum > 1) {
@@ -829,13 +741,9 @@ function App() {
             cell.border = { bottom: { style: 'medium', color: { argb: 'FFD1D5DB' } } };
           }
         });
-
-        // Ensure indentation of the row itself matches hierarchy? 
-        // Excel outline handles the collapse. Visually, the headers are distinct.
       }
 
       else if (r.type === 'table-row') {
-        // [Empty/Indent, ...Values]
         row = worksheet.addRow(['', ...(r.values || [])]);
         row.eachCell((cell, colNum) => {
           if (colNum > 1) {
@@ -855,260 +763,209 @@ function App() {
       else {
         row = worksheet.addRow([]);
       }
-
-      // --- APPLY GROUPING ---
       row.outlineLevel = r.level;
     });
 
-    // Auto widths
     worksheet.getColumn(1).width = 60;
     worksheet.getColumn(2).width = 40;
 
-    // Write
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     saveAs(blob, "GroundTruth_YAML_Style.xlsx");
   };
 
-
-
   const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    e.target.value = '';
+
     const reader = new FileReader();
     reader.onload = async (evt) => {
-      const buffer = evt.target?.result as ArrayBuffer;
-      const workbook = new ExcelJS.Workbook();
-      await workbook.xlsx.load(buffer);
-      const worksheet = workbook.getWorksheet("Hierarchy");
-      if (!worksheet) {
-        alert("Invalid Excel File: Missing 'Hierarchy' sheet");
-        return;
-      }
+      try {
+        const buffer = evt.target?.result as ArrayBuffer;
+        if (!buffer) return;
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(buffer);
 
-      // Reconstruct Data
-      const setDeepValue = (obj: any, pathStr: string, val: any) => {
-        if (!pathStr) return obj;
-        const path = pathStr.split('.').map(p => isNaN(Number(p)) ? p : Number(p));
-        // Inline robust setValue wrapper
-        const setRobust = (o: any, p: (string | number)[], v: any): any => {
-          if (p.length === 0) return v;
-          const [h, ...t] = p;
-          const current = o || {};
-          const isArr = Array.isArray(current);
-          const nextIsArr = t.length > 0 && typeof t[0] === 'number';
-          if (isArr) {
-            const newArr = [...current];
-            const idx = Number(h);
-            if (newArr[idx] === undefined) newArr[idx] = nextIsArr ? [] : {};
-            newArr[idx] = setRobust(newArr[idx], t, v);
-            return newArr;
+        const worksheet = workbook.getWorksheet("Data") || workbook.getWorksheet(1);
+        if (!worksheet) {
+          alert("Invalid Excel File: Could not find data sheet");
+          return;
+        }
+
+        console.log("Importing Sheet:", worksheet.name);
+
+        let newData: any = undefined;
+        let stack: { obj: any; level: number; key?: string }[] = [];
+        let tableCtx: { headers: string[]; array: any[] } | null = null;
+        let lastObj: any = null;
+
+        const getIndentLevel = (row: ExcelJS.Row, text: string) => {
+          let spaces = 0;
+          for (let char of text) {
+            if (char === ' ') spaces++;
+            else break;
           }
-          const newObj = { ...current };
-          if (newObj[h] === undefined) newObj[h] = nextIsArr ? [] : {};
-          newObj[h] = setRobust(newObj[h], t, v);
-          return newObj;
+          if (spaces > 0) return Math.floor(spaces / 2);
+          return (row.outlineLevel || 0);
         };
-        return setRobust(obj, path, val);
-      };
 
-      // 0. Parse Headers explicitly
-      const colMap: Record<string, number> = {};
-      const dataCols: number[] = [];
+        const initRoot = (isArray: boolean) => {
+          if (newData !== undefined) return;
+          newData = isArray ? [] : {};
+          stack = [{ obj: newData, level: -1 }];
+          lastObj = newData;
+        };
 
-      const headerRow = worksheet.getRow(1);
-      headerRow.eachCell((cell, colNum) => {
-        const headerVal = cell.value?.toString().trim() || "";
-        if (headerVal) {
-          colMap[headerVal] = colNum;
-          if (!['Path', 'Structure', 'Value', 'Type'].includes(headerVal)) {
-            dataCols.push(colNum);
+        worksheet.eachRow((row, rowNumber) => {
+          if (rowNumber === 1) return;
+
+          const cell1 = row.getCell(1);
+          const cell2 = row.getCell(2);
+
+          let label = cell1.text || "";
+          let val: any = cell2.value;
+
+          const hasInputLabel = label.trim().length > 0;
+
+          if (tableCtx && hasInputLabel) {
+            const looksLikeID = !isNaN(Number(label.trim()));
+            console.warn(`Row ${rowNumber}: Found label '${label}' inside table context. Ending table.`);
+
+            if (looksLikeID && (val !== null && val !== undefined)) {
+              const confirmFix = window.confirm(
+                `Row ${rowNumber} seems to have data in the first column ('${label}').\n` +
+                `Inside a table, the first column (Structure) should be empty.\n` +
+                `Did you mean to put '${label}' as the value for '${tableCtx.headers[0]}'?\n\n` +
+                `Click OK to treat it as a data row (Auto-Fit).\n` +
+                `Click Cancel to treat it as a new Section (End Table).`
+              );
+              if (confirmFix) {
+                const rowObj: any = {};
+                rowObj[tableCtx.headers[0]] = Number(label.trim());
+                if (tableCtx.headers[1]) {
+                  if (typeof val === 'object' && 'text' in val) val = val.text;
+                  rowObj[tableCtx.headers[1]] = val;
+                }
+                tableCtx.headers.slice(2).forEach((h, i) => {
+                  const c = row.getCell(i + 3);
+                  let v = c.value;
+                  if (v && typeof v === 'object' && 'text' in v) v = (v as any).text;
+                  rowObj[h] = v;
+                });
+
+                tableCtx.array.push(rowObj);
+                return;
+              }
+            }
           }
-        }
-      });
 
-      const getVal = (row: ExcelJS.Row, headerName: string): any => {
-        const idx = colMap[headerName];
-        if (!idx) return undefined;
-        return row.getCell(idx).value;
-      };
+          if (hasInputLabel) {
+            tableCtx = null;
+            const level = getIndentLevel(row, label);
+            const key = label.trim();
 
-      let newData: any = {};
+            initRoot(false);
 
-      // Determine Root (Array vs Object)
-      let isRootArray = false;
-      worksheet.eachRow((row, rowNumber) => {
-        if (rowNumber === 1) return;
-        const pathVal = getVal(row, 'Path')?.toString();
-        // If first path starts with "0.", it's an array
-        if (pathVal && !isNaN(Number(pathVal.split('.')[0]))) {
-          isRootArray = true;
-        }
-      });
-      newData = isRootArray ? [] : {};
-
-      // 1. SEQUENTIAL PROCESSING
-      // We process the file Top-to-Bottom.
-      // We maintain "Current Context" (Are we inside a table? Which index are we on?)
-      // This completely ignores the explicit indices in the 'Path' column for Table Rows,
-      // trusting the visual file order instead.
-
-      let currentTablePath: string | null = null;
-      let currentTableIndex: number = 0;
-
-      // Indentation Stack for Standard Fields: [{ path: "", indent: -1 }]
-      // Used to infer parent of new rows based on "Structure" indentation
-      let indentStack: { path: string, indent: number }[] = [{ path: "", indent: -1 }];
-
-      worksheet.eachRow((row, rowNumber) => {
-        if (rowNumber === 1) return;
-
-        let path = getVal(row, 'Path')?.toString() || "";
-        let type = getVal(row, 'Type')?.toString();
-
-        // A. DETECT TABLE CONTEXT SWITCH
-        if (type === 'Table') {
-          // Starting a new Table Block
-          currentTablePath = path;
-          currentTableIndex = 0; // Reset counter
-          return; // This row is just a header/container, no value
-        }
-
-        if (type === 'TableHeader') return; // Skip
-
-        // B. DETECT TABLE ROW (Explicit or Inferred)
-        // If Type is 'TableRow', it is part of the current table.
-        // If Path is empty but we are in a table context, it is a new inserted row.
-        // If Path exists but matches the table prefix, it is an edited row (we ignore its old index).
-
-        let isTableRow = false;
-
-        if (type === 'TableRow') {
-          isTableRow = true;
-        } else if (!type && !path && currentTablePath) {
-          // Empty row inside a table block -> New Item
-          isTableRow = true;
-        } else if (currentTablePath && path.startsWith(currentTablePath + '.')) {
-          // It has a path, check if it looks like a table item
-          // Verify it is immediate child logic? 
-          // Actually, standard "Array of Objects" export creates paths like "root.items.0"
-          // If currentTablePath is "root.items", this checks out.
-          isTableRow = true;
-        }
-
-        // C. PROCESS ROW
-        if (isTableRow && currentTablePath) {
-          // --- TABLE MODE ---
-          // We FORCE the path to use our sequential index.
-          const effectivePath = `${currentTablePath}.${currentTableIndex}`;
-
-          // Read all dynamic columns
-          dataCols.forEach(colIdx => {
-            const key = Object.keys(colMap).find(k => colMap[k] === colIdx);
-            if (!key) return;
-
-            const cellVal = row.getCell(colIdx).value;
-            let finalVal: any = cellVal;
-
-            if (typeof cellVal === 'object' && cellVal !== null && 'text' in cellVal) {
-              finalVal = (cellVal as any).text;
+            while (stack.length > 1 && stack[stack.length - 1].level >= level) {
+              stack.pop();
             }
 
-            if (finalVal !== undefined && finalVal !== null && finalVal !== '') {
-              if (String(finalVal).toLowerCase() === 'true') finalVal = true;
-              else if (String(finalVal).toLowerCase() === 'false') finalVal = false;
-              else if (!isNaN(Number(finalVal)) && String(finalVal).trim() !== '') finalVal = Number(finalVal);
+            const parentCtx = stack[stack.length - 1];
+            const parent = parentCtx.obj;
 
-              newData = setDeepValue(newData, `${effectivePath}.${key}`, finalVal);
-            }
-          });
+            let effectiveKey: string | number = key;
+            if (Array.isArray(parent)) effectiveKey = parent.length;
 
-          // Increment for NEXT row
-          currentTableIndex++;
+            const isValueEmpty = val === undefined || val === null || (typeof val === 'string' && val.trim() === '');
 
-        } else {
-          // --- STANDARD MODE (Primitive / Individual Field) ---
+            if (!isValueEmpty) {
+              if (typeof val === 'object' && 'text' in val) val = val.text;
+              if (String(val).toUpperCase() === 'TRUE') val = true;
+              if (String(val).toUpperCase() === 'FALSE') val = false;
 
-          // 1. Calculate Indentation logic
-          const structureRaw = getVal(row, 'Structure')?.toString() || "";
-
-          // Determine indent based on leading hyphens (---- per level)
-          // match start of string with one or more hyphens or spaces (backward compat?)
-          // Let's stick to user request: 4 hyphens.
-          const leadingMarkersMatch = structureRaw.match(/^[\s-]*/);
-          const leadingMarkersCount = leadingMarkersMatch ? leadingMarkersMatch[0].length : 0;
-
-          // If strictly hyphens, we replace them.
-          const trimmedKey = structureRaw.replace(/^[\s-]+/, '').trim();
-
-          // 2. Sync Hierarchy Stack
-          // If we have an explicit path, we align the stack to it.
-          // If not, we align the stack to the indentation.
-
-          if (path) {
-            // Existing Row: Trust its path, push to stack
-            // Clear stack of deeper/equal items if this is a sibling/uncle
-            while (indentStack.length > 1 && indentStack[indentStack.length - 1].indent >= leadingMarkersCount) {
-              indentStack.pop();
-            }
-            indentStack.push({ path: path, indent: leadingMarkersCount });
-
-            // We might have exited the table?
-            if (currentTablePath && !path.startsWith(currentTablePath)) {
-              currentTablePath = null;
-            }
-
-          } else {
-            // New Row (Missing Path): Infer from Indentation
-            // Pop stack until we find a parent (indent < current)
-            while (indentStack.length > 1 && indentStack[indentStack.length - 1].indent >= leadingMarkersCount) {
-              indentStack.pop();
-            }
-            const parent = indentStack[indentStack.length - 1];
-
-            // Construct New Path
-            if (parent.path) {
-              path = `${parent.path}.${trimmedKey}`;
+              if (Array.isArray(parent)) parent.push(val);
+              else parent[effectiveKey] = val;
             } else {
-              path = trimmedKey; // Root level
+              const newObj: any = {};
+              if (Array.isArray(parent)) parent.push(newObj);
+              else parent[effectiveKey] = newObj;
+
+              stack.push({ obj: newObj, level, key: String(effectiveKey) });
+              lastObj = newObj;
             }
 
-            // Push inferred context
-            indentStack.push({ path: path, indent: leadingMarkersCount });
-          }
-
-          // If still no path, we can't do anything (orphaned row)
-          if (!path) return;
-
-          const explicitType = getVal(row, 'Type')?.toString();
-          let finalVal: any = getVal(row, 'Value');
-
-          if (typeof finalVal === 'object' && finalVal !== null && 'text' in finalVal) {
-            finalVal = (finalVal as any).text;
-          }
-
-          if (explicitType === 'boolean') {
-            finalVal = (String(finalVal).toLowerCase() === 'true');
-          } else if (explicitType === 'number') {
-            finalVal = Number(finalVal);
-          } else if (explicitType === 'null') {
-            finalVal = null;
           } else {
-            if (!explicitType && finalVal !== null && finalVal !== undefined) {
-              if (String(finalVal).toLowerCase() === 'true') finalVal = true;
-              else if (String(finalVal).toLowerCase() === 'false') finalVal = false;
-              else if (!isNaN(Number(finalVal)) && String(finalVal).trim() !== '') finalVal = Number(finalVal);
+            if (newData === undefined) initRoot(true);
+
+            if (!tableCtx) {
+              const headers: string[] = [];
+              row.eachCell((cell, colNum) => {
+                if (colNum > 1) headers.push(cell.text.trim());
+              });
+
+              if (headers.length > 0) {
+                const parentCtx = stack[stack.length - 1];
+                let targetArray: any[] = [];
+
+                if (parentCtx && parentCtx.obj === lastObj && !Array.isArray(parentCtx.obj)) {
+                  targetArray = [];
+                  if (stack.length >= 2) {
+                    const gp = stack[stack.length - 2].obj;
+                    const key = parentCtx.key;
+                    if (key !== undefined) {
+                      if (Array.isArray(gp)) gp[Number(key)] = targetArray;
+                      else gp[key] = targetArray;
+                    }
+                  } else {
+                    newData = targetArray;
+                  }
+                  parentCtx.obj = targetArray;
+                } else if (Array.isArray(parentCtx.obj)) {
+                  targetArray = parentCtx.obj;
+                }
+
+                tableCtx = { headers, array: targetArray };
+              }
+            } else {
+              const rowObj: any = {};
+              let hasData = false;
+
+              tableCtx.headers.forEach((h, idx) => {
+                const cell = row.getCell(idx + 2);
+                let v = cell.value;
+                if (v && typeof v === 'object' && 'text' in v) v = (v as any).text;
+
+                if (v !== undefined && v !== null && String(v).trim() !== '') {
+                  if (String(v).toUpperCase() === 'TRUE') v = true;
+                  if (String(v).toUpperCase() === 'FALSE') v = false;
+                  rowObj[h] = v;
+                  hasData = true;
+                }
+              });
+
+              if (hasData) {
+                tableCtx.array.push(rowObj);
+              }
             }
           }
+        });
 
-          newData = setDeepValue(newData, path, finalVal);
+        if (newData) {
+          setParsedData(newData);
+          setJsonInput(JSON.stringify(newData, null, 2));
+          setYamlInput(yaml.dump(newData));
+          setError(null);
+          alert("Import Successful!");
+        } else {
+          alert("No data found in file.");
         }
-      });
 
-      setParsedData(newData);
-      setJsonInput(JSON.stringify(newData, null, 2));
-      e.target.value = '';
+      } catch (err) {
+        console.error("Import Error", err);
+        alert("Error parsing file");
+      }
     };
     reader.readAsArrayBuffer(file);
   };
@@ -1148,7 +1005,6 @@ function App() {
         <button
           className={`tab-btn ${activeTab === 'yaml' ? 'active' : ''}`}
           onClick={() => {
-            // Convert current JSON to YAML when switching to tab
             if (activeTab !== 'yaml') {
               try {
                 const obj = JSON.parse(jsonInput);
@@ -1249,7 +1105,7 @@ function App() {
                       setError(null);
                     }
                   } catch (err) {
-                    // Don't error on every keystroke, just don't update
+                    // Don't error on every keystroke
                   }
                 }}
                 className="json-input"
@@ -1339,21 +1195,7 @@ function App() {
                     />
                   )}
 
-                  {/* Special case: If root is Object, allow adding fields to it directly?
-                       The renderer above maps entries. We need to wrap root object in a DynamicField?
-                       Actually, the recursive structure handles it best if we treat root as just a value.
-                       However, the current App.tsx maps Object.entries manually for the root object 
-                       to avoid an extra "Root" wrapper which looks ugly.
-                       But this means we can't easily add fields to root.
-                       Let's Fix: We should just show an "Add Field" button at the bottom of the Root render loop.
-                   */}
                   {typeof parsedData === 'object' && !Array.isArray(parsedData) && (
-                    /* We need to reuse the UI logic for adding fields. 
-                       Ideally we should refactor "Add Field" into a component or just duplicate it here briefly.
-                       For simplicity/cleanliness, let's wrap the root in DynamicField, 
-                       BUT with a special "transparent" mode?
-                       No, simpler: Just render the Logic here. 
-                    */
                     <RootObjectAdder
                       onChange={handleFormChange}
                       rootData={parsedData}
