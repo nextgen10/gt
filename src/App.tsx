@@ -669,6 +669,7 @@ function App() {
     type ExcelRow = {
       type: 'field' | 'table-header' | 'table-col-headers' | 'table-row';
       path: string;
+      label: string; // Display Key
       value?: any;
       headers?: string[];
       values?: any[];
@@ -677,41 +678,53 @@ function App() {
 
     const rows: ExcelRow[] = [];
 
-    const traverse = (obj: any, prefix: string, level: number) => {
+    // Traverse: obj, fullPath, displayKey, level
+    const traverse = (obj: any, path: string, key: string, level: number) => {
       // 1. Check for Table (Array of Objects)
       const isTable = Array.isArray(obj) && obj.length > 0 &&
         obj.every((i: any) => i && typeof i === 'object' && !Array.isArray(i));
 
       if (isTable) {
-        // A. Table Block Header (Parent Path)
-        rows.push({ type: 'table-header', path: prefix, level });
+        // A. Table Block Header (Key Name)
+        rows.push({ type: 'table-header', path: path, label: key, level });
 
         // B. Calculate Columns
         const keys = new Set<string>();
         obj.forEach((row: any) => Object.keys(row).forEach(k => keys.add(k)));
         const colHeaders = Array.from(keys);
 
-        // C. Column Headers Row
-        rows.push({ type: 'table-col-headers', path: '', headers: colHeaders, level });
+        // C. Column Headers Row (Indent + 1)
+        // We don't really have a label for this row, it uses col headers.
+        rows.push({ type: 'table-col-headers', path: '', label: '', headers: colHeaders, level: level + 1 });
 
         // D. Data Rows
         obj.forEach((rowObj: any, rowIndex: number) => {
           const rowVals = colHeaders.map(k => {
             const val = rowObj[k];
-            // Show placeholders for complex nested data to avoid [object Object] mess
             if (val && typeof val === 'object') {
               return Array.isArray(val) ? `[Array(${val.length})]` : '[Object]';
             }
             return val;
           });
-          rows.push({ type: 'table-row', path: '', values: rowVals, level });
+          // Table Rows are at level + 1 (indented under the table header)
+          rows.push({ type: 'table-row', path: '', label: '', values: rowVals, level: level + 1 });
 
-          // E. Recurse for Complex Children (to render nested tables/objects below)
+          // E. Recurse for Complex Children
           Object.entries(rowObj).forEach(([k, v]) => {
             if (v && typeof v === 'object') {
-              // Generate deep path: parent.0.child
-              const childPath = prefix ? `${prefix}.${rowIndex}.${k}` : `${rowIndex}.${k}`;
-              traverse(v, childPath, level + 1);
+              const childPath = path ? `${path}.${rowIndex}.${k}` : `${rowIndex}.${k}`;
+              // Recursive tables/objects start at level + 2 (under the row, conceptually)
+              // Or maybe just level + 1 if we treat them as siblings to the row content?
+              // "YAML" style:
+              // - Item 1
+              //   key: val
+              //   regions:
+              //     ...
+              // Let's use level + 1 relative to the Row, so Level + 2 total.
+              // But we need a parent label for the deep object? Currently we use 'k'.
+              // Wait, `traverse` expects `key`.
+              // We need to render the key `k` as the header for the next block.
+              traverse(v, childPath, k, level + 2);
             }
           });
         });
@@ -720,68 +733,84 @@ function App() {
 
       // 2. Standard Traversal
       if (Array.isArray(obj)) {
-        // It's a primitive array or mixed. Expand standardly.
         obj.forEach((v: any, i: number) => {
-          traverse(v, prefix ? `${prefix}.${i}` : `${i}`, level);
+          // For Arrays, key is usually index, but in YAML lists are hyphenated "-".
+          // We'll use "- (Index)" or just "-".
+          traverse(v, path ? `${path}.${i}` : `${i}`, `Item ${i + 1}`, level);
         });
         return;
       }
 
       if (obj && typeof obj === 'object') {
+        // If this is a nested object, we need a separate "Header Row" for the object Key
+        // UNLESS it's the root or we are already inside a recursive call that pushed the key?
+        // In `traverse`, we are processing `obj`. `key` is passed in.
+        // If it's the Root, we might not want a row.
+        // If it's a nested object field, we usually want: `Key:` row, then children indented.
+
+        if (key && key !== 'Root') {
+          rows.push({ type: 'table-header', path: path, label: key, level });
+          level++; // Indent children
+        }
+
         Object.entries(obj).forEach(([k, v]) => {
-          traverse(v, prefix ? `${prefix}.${k}` : k, level + 1);
+          traverse(v, path ? `${path}.${k}` : k, k, level);
         });
         return;
       }
 
       // 3. Primitive Field
-      rows.push({ type: 'field', path: prefix, value: obj, level });
+      rows.push({ type: 'field', path: path, label: key, value: obj, level });
     };
 
     // Start
-    traverse(parsedData, '', 0);
+    traverse(parsedData, '', '', 0);
 
     // --- RENDER TO EXCEL ---
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("Data", { views: [{ showGridLines: false }] });
 
     // Header Row (Main)
-    const mainHeader = worksheet.addRow(['JSONPath', 'Value']);
+    const mainHeader = worksheet.addRow(['Structure', 'Value']);
     mainHeader.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 12 };
     mainHeader.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
     mainHeader.height = 30;
 
+    // Configure Outline
+    worksheet.properties.outlineProperties = { summaryBelow: false, summaryRight: false };
+
     // Process Rows
     rows.forEach(r => {
-      if (r.type === 'field') {
-        const row = worksheet.addRow([r.path, r.value]);
+      let row: ExcelJS.Row;
 
-        // Style Path
+      // Indentation String (2 spaces per level)
+      const indentStr = "  ".repeat(r.level);
+
+      if (r.type === 'field') {
+        row = worksheet.addRow([indentStr + r.label, r.value]); // Indented Label
+
         const pathCell = row.getCell(1);
         pathCell.font = { color: { argb: 'FF374151' }, bold: true };
-        pathCell.alignment = { vertical: 'middle' };
+        pathCell.alignment = { vertical: 'middle' }; // No alignment indent, using spaces
 
-        // Style Value
         const valCell = row.getCell(2);
         valCell.alignment = { vertical: 'middle', wrapText: true };
 
-        // Format Boolean/Number
         if (typeof r.value === 'boolean') {
           valCell.value = r.value ? 'TRUE' : 'FALSE';
           valCell.font = { color: { argb: 'FF7C3AED' }, bold: true };
           valCell.dataValidation = { type: 'list', allowBlank: false, formulae: ['"TRUE,FALSE"'] };
         } else if (typeof r.value === 'number') {
-          valCell.font = { color: { argb: 'FF0284C7' } }; // Blue for Numbers
+          valCell.font = { color: { argb: 'FF0284C7' } };
           valCell.alignment = { horizontal: 'left' };
         }
 
-        // Bottom Border
         row.eachCell(c => c.border = { bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } } });
       }
 
       else if (r.type === 'table-header') {
-        // Section Header
-        const row = worksheet.addRow([r.path]);
+        // Just the Key Name (Section Header)
+        row = worksheet.addRow([indentStr + r.label]);
         const cell = row.getCell(1);
         cell.font = { size: 12, bold: true, color: { argb: 'FF111827' } };
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } };
@@ -789,49 +818,56 @@ function App() {
       }
 
       else if (r.type === 'table-col-headers') {
-        // [Empty, ...Headers]
-        const row = worksheet.addRow(['', ...(r.headers || [])]);
-
+        // [Empty/Indent, ...Headers]
+        // Alignment: Col 1 is empty indentation. Headers start at Col 2.
+        // Actually, if we use space-indentation, we can just put empty string in Col 1.
+        row = worksheet.addRow(['', ...(r.headers || [])]);
         row.eachCell((cell, colNum) => {
           if (colNum > 1) {
             cell.font = { bold: true, color: { argb: 'FF4B5563' } };
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9FAFB' } }; // Light grey header
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9FAFB' } };
             cell.border = { bottom: { style: 'medium', color: { argb: 'FFD1D5DB' } } };
           }
         });
+
+        // Ensure indentation of the row itself matches hierarchy? 
+        // Excel outline handles the collapse. Visually, the headers are distinct.
       }
 
       else if (r.type === 'table-row') {
-        // [Empty, ...Values]
-        const row = worksheet.addRow(['', ...(r.values || [])]);
-
+        // [Empty/Indent, ...Values]
+        row = worksheet.addRow(['', ...(r.values || [])]);
         row.eachCell((cell, colNum) => {
           if (colNum > 1) {
             const val = (r.values || [])[colNum - 2];
-            cell.value = val; // Explicitly set value again to be safe
+            cell.value = val;
             cell.border = { bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } } };
 
-            if (typeof val === 'number') {
-              cell.font = { color: { argb: 'FF0284C7' } };
-            }
+            if (typeof val === 'number') cell.font = { color: { argb: 'FF0284C7' } };
             if (typeof val === 'boolean') {
-              cell.value = val ? 'TRUE' : 'FALSE'; // Force string for visibility/dropdown match
+              cell.value = val ? 'TRUE' : 'FALSE';
               cell.font = { color: { argb: 'FF7C3AED' }, bold: true };
               cell.dataValidation = { type: 'list', allowBlank: false, formulae: ['"TRUE,FALSE"'] };
             }
           }
         });
       }
+      else {
+        row = worksheet.addRow([]);
+      }
+
+      // --- APPLY GROUPING ---
+      row.outlineLevel = r.level;
     });
 
-    // Auto widths (approx)
-    worksheet.getColumn(1).width = 50; // Path
-    worksheet.getColumn(2).width = 40; // Value
+    // Auto widths
+    worksheet.getColumn(1).width = 60;
+    worksheet.getColumn(2).width = 40;
 
     // Write
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-    saveAs(blob, "GroundTruth_Hybrid.xlsx");
+    saveAs(blob, "GroundTruth_YAML_Style.xlsx");
   };
 
 
