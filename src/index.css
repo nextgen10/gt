@@ -362,3 +362,128 @@ body {
   color: var(--text-secondary);
   text-align: center;
 }
+
+/* Table Styles */
+.json-table-container {
+  width: 100%;
+  overflow-x: auto;
+  margin-top: 0.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border-color);
+}
+
+.json-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  min-width: 400px;
+  background-color: rgba(30, 41, 59, 0.5);
+  /* Semi-transparent Slate-800 */
+}
+
+
+.json-table th {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.json-table td {
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  vertical-align: top;
+}
+
+.json-table tr:last-child td {
+  border-bottom: none;
+}
+
+.json-table input {
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  color: var(--text-primary);
+  transition: all 0.2s;
+}
+
+.json-table input:hover,
+.json-table input:focus {
+  background: rgba(0, 0, 0, 0.2);
+  border-color: var(--accent-primary);
+  outline: none;
+}
+
+/* Color Coding for Types */
+.input-number {
+  color: #60a5fa !important;
+  /* Blue-400 */
+}
+
+.input-string {
+  color: #a5f3fc !important;
+  /* Cyan-200 */
+}
+
+.input-boolean-text {
+  color: #f472b6 !important;
+  /* Pink-400 */
+}
+
+/* Table Header Colors */
+.json-table th {
+  background-color: var(--bg-tertiary);
+  color: var(--accent-secondary);
+  border-bottom: 2px solid var(--border-color);
+}
+
+
+
+/* Tabs Navigation */
+.tab-nav {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0;
+}
+
+.tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  background: transparent;
+  border: none;
+  border-top-left-radius: var(--radius-md);
+  border-top-right-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  /* Overlap border */
+}
+
+.tab-btn:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-tertiary);
+}
+
+.tab-btn.active {
+  color: var(--accent-secondary);
+  border-bottom: 2px solid var(--accent-secondary);
+  background-color: var(--bg-secondary);
+}
+
+/* Full Width Layout for Tabs */
+.main-layout.tabbed-mode {
+  grid-template-columns: 1fr;
+  gap: 0;
+}
