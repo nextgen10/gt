@@ -252,14 +252,16 @@ body {
 }
 
 .field-container {
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
 }
 
+/* Cleaner Header */
 .field-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 0.4rem;
+  padding: 0.25rem 0;
 }
 
 .field-label {
@@ -268,64 +270,101 @@ body {
   gap: 0.5rem;
   font-size: 0.875rem;
   color: var(--text-secondary);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+/* Distinct Section Headers for Objects */
+.bg-section-header .field-label {
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  font-weight: 600;
 }
 
 .type-badge {
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   padding: 0.1rem 0.4rem;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  opacity: 0.7;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+  border: none;
+  font-weight: 600;
+  text-transform: uppercase;
 }
 
 .input,
 .select {
-  background-color: var(--bg-primary);
-  border: 1px solid var(--border-color);
+  background-color: rgba(0, 0, 0, 0.2);
+  border: 1px solid transparent;
   color: var(--text-primary);
-  padding: 0.6rem;
+  padding: 0.5rem 0.75rem;
   border-radius: var(--radius-sm);
   width: 100%;
+  transition: all 0.2s;
+}
+
+.input:hover,
+.select:hover {
+  background-color: rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .input:focus,
 .select:focus {
+  background-color: rgba(0, 0, 0, 0.4);
   border-color: var(--accent-primary);
   outline: none;
 }
 
+/* Simplified Nested Objects - Card Style */
 .nested-object {
-  margin-left: 0.5rem;
-  padding-left: 1rem;
-  border-left: 2px solid var(--bg-tertiary);
+  margin-left: 0;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: var(--radius-md);
   margin-top: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Alternating backgrounds for depth matching */
+.nested-object .nested-object {
+  background: rgba(0, 0, 0, 0.15);
+  border: none;
+}
+
+.nested-object .nested-object .nested-object {
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .array-item {
-  background: rgba(255, 255, 255, 0.03);
+  background: transparent;
   border-radius: var(--radius-md);
-  padding: 1rem;
-  margin-bottom: 0.75rem;
-  border: 1px solid var(--border-color);
+  padding: 0;
+  margin-bottom: 1rem;
+  border: none;
   position: relative;
+  padding-left: 1rem;
+  border-left: 2px solid var(--border-color);
+}
+
+.array-item:hover {
+  border-left-color: var(--accent-secondary);
 }
 
 /* Add Field Form */
 .add-field-row {
   display: flex;
   gap: 0.5rem;
-  margin-top: 1rem;
-  margin-left: 0.5rem;
-  padding: 0.5rem;
+  margin-top: 0.75rem;
+  padding: 0.75rem;
   background: rgba(255, 255, 255, 0.05);
   border-radius: var(--radius-md);
   align-items: center;
-  border: 1px dashed var(--border-color);
 }
 
 /* Toggle Switch */
 .toggle-switch {
-  width: 2.5rem;
+  width: 2.25rem;
   height: 1.25rem;
   background-color: var(--bg-tertiary);
   border-radius: 99px;
@@ -335,22 +374,23 @@ body {
 }
 
 .toggle-switch.active {
-  background-color: var(--accent-primary);
+  background-color: var(--success);
 }
 
 .toggle-thumb {
-  width: 1rem;
-  height: 1rem;
+  width: 0.9rem;
+  height: 0.9rem;
   background: white;
   border-radius: 50%;
   position: absolute;
-  top: 0.125rem;
-  left: 0.125rem;
-  transition: 0.2s;
+  top: 0.175rem;
+  left: 0.175rem;
+  transition: 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .toggle-switch.active .toggle-thumb {
-  transform: translateX(1.25rem);
+  transform: translateX(1rem);
 }
 
 .empty-state {
@@ -363,84 +403,77 @@ body {
   text-align: center;
 }
 
-/* Table Styles */
+/* Table Styles - Refined */
 .json-table-container {
   width: 100%;
   overflow-x: auto;
   margin-top: 0.5rem;
-  border-radius: 0.5rem;
+  border-radius: var(--radius-md);
   border: 1px solid var(--border-color);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
 }
 
 .json-table {
   width: 100%;
-  border-collapse: collapse;
-  font-size: 0.9rem;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.85rem;
   min-width: 400px;
-  background-color: rgba(30, 41, 59, 0.5);
-  /* Semi-transparent Slate-800 */
+  background-color: var(--bg-secondary);
 }
 
+.json-table th,
+.json-table td {
+  border: none;
+  border-bottom: 1px solid var(--border-color);
+}
 
 .json-table th {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-tertiary);
   padding: 0.75rem 1rem;
   text-align: left;
-  font-weight: 500;
-  color: var(--text-secondary);
-  border-bottom: 1px solid var(--border-color);
+  font-weight: 600;
+  color: var(--text-primary);
   white-space: nowrap;
 }
 
+.json-table th:first-child {
+  border-top-left-radius: var(--radius-md);
+}
+
+.json-table th:last-child {
+  border-top-right-radius: var(--radius-md);
+}
+
 .json-table td {
-  padding: 0.5rem 1rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  vertical-align: top;
+  padding: 0.5rem 0.75rem;
+  vertical-align: middle;
 }
 
 .json-table tr:last-child td {
   border-bottom: none;
 }
 
-.json-table input {
-  width: 100%;
-  background: transparent;
-  border: 1px solid transparent;
-  padding: 0.25rem 0.5rem;
-  border-radius: 0.25rem;
-  color: var(--text-primary);
-  transition: all 0.2s;
-}
-
-.json-table input:hover,
-.json-table input:focus {
-  background: rgba(0, 0, 0, 0.2);
-  border-color: var(--accent-primary);
-  outline: none;
+.json-table tr:hover td {
+  background-color: rgba(255, 255, 255, 0.02);
 }
 
 /* Color Coding for Types */
 .input-number {
   color: #60a5fa !important;
-  /* Blue-400 */
+  font-family: 'Monaco', monospace;
 }
 
 .input-string {
-  color: #a5f3fc !important;
-  /* Cyan-200 */
+  color: #e2e8f0 !important;
 }
 
 .input-boolean-text {
   color: #f472b6 !important;
-  /* Pink-400 */
 }
 
 /* Table Header Colors */
-.json-table th {
-  background-color: var(--bg-tertiary);
-  color: var(--accent-secondary);
-  border-bottom: 2px solid var(--border-color);
-}
+/* Removed redundant block */
 
 
 

@@ -89,7 +89,7 @@ const DynamicField = ({
   const [newKey, setNewKey] = useState("");
   const [newType, setNewType] = useState("string");
 
-  const [isExpanded, setIsExpanded] = useState(level === 0);
+  const [isExpanded, setIsExpanded] = useState(level < 2);
 
   useEffect(() => {
     if (forceExpandState !== null && forceExpandState !== undefined) {
@@ -158,7 +158,7 @@ const DynamicField = ({
   const getTypeLabel = () => {
     if (isArray && isTableMode) return 'Table';
     if (isArray) return 'Array';
-    if (isObject) return 'Object';
+    if (isObject) return 'Section';
     return typeof value;
   };
 
@@ -182,7 +182,7 @@ const DynamicField = ({
       }}
     >
       {!hideHeader && (
-        <div className="field-header">
+        <div className={`field-header ${!isPrimitive ? 'bg-section-header' : ''}`}>
           <label
             className="field-label select-none"
             style={{ cursor: isPrimitive ? 'default' : 'pointer', flex: 1, display: 'flex', alignItems: 'center' }}
@@ -193,15 +193,6 @@ const DynamicField = ({
               }
             }}
           >
-            {!isPrimitive && (
-              <span
-                className="text-blue-400 mr-2 hover:text-blue-300"
-                onClick={(e) => { e.preventDefault(); setIsExpanded(!isExpanded); }}
-              >
-                {isExpanded ? <Minus size={14} /> : <Plus size={14} />}
-              </span>
-            )}
-
             {isEditingKey ? (
               <input
                 autoFocus
@@ -237,6 +228,15 @@ const DynamicField = ({
                 }}
               >
                 {label}
+              </span>
+            )}
+
+            {!isPrimitive && (
+              <span
+                className="text-blue-400 ml-2 hover:text-blue-300"
+                onClick={(e) => { e.preventDefault(); setIsExpanded(!isExpanded); }}
+              >
+                {isExpanded ? <Minus size={14} /> : <Plus size={14} />}
               </span>
             )}
 
