@@ -698,6 +698,8 @@ function App() {
 
     worksheet.properties.outlineProperties = { summaryBelow: false, summaryRight: false };
 
+    let tableStripingIndex = 0;
+
     rows.forEach(r => {
       let row: ExcelJS.Row;
       const indentStr = "  ".repeat(r.level);
@@ -706,22 +708,27 @@ function App() {
         row = worksheet.addRow([indentStr + r.label, r.value]);
 
         const pathCell = row.getCell(1);
-        pathCell.font = { color: { argb: 'FF374151' }, bold: true };
-        pathCell.alignment = { vertical: 'middle' };
+        pathCell.font = { color: { argb: 'FF374151' }, bold: true, name: 'Calibri', size: 11 };
+        pathCell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+
+        row.height = 22;
 
         const valCell = row.getCell(2);
-        valCell.alignment = { vertical: 'middle', wrapText: true };
+        valCell.alignment = { vertical: 'middle', wrapText: true, indent: 1 };
+
+        // Subtle Separator
+        row.eachCell(c => c.border = { bottom: { style: 'dotted', color: { argb: 'FFCBD5E1' } } });
 
         if (typeof r.value === 'boolean') {
           valCell.value = r.value ? 'TRUE' : 'FALSE';
           valCell.font = { color: { argb: 'FF7C3AED' }, bold: true };
           valCell.dataValidation = { type: 'list', allowBlank: false, formulae: ['"TRUE,FALSE"'] };
         } else if (typeof r.value === 'number') {
-          valCell.font = { color: { argb: 'FF0284C7' } };
-          valCell.alignment = { horizontal: 'left' };
+          valCell.font = { color: { argb: 'FF0369A1' }, bold: true };
+          valCell.alignment = { horizontal: 'left', indent: 1 };
+        } else {
+          valCell.font = { color: { argb: 'FF1F2937' } };
         }
-
-        row.eachCell(c => c.border = { bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } } });
       }
 
       else if (r.type === 'table-header') {
@@ -729,33 +736,58 @@ function App() {
         const cell = row.getCell(1);
         cell.font = { size: 12, bold: true, color: { argb: 'FF111827' } };
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } };
-        row.height = 25;
+        cell.border = { top: { style: 'thin', color: { argb: 'FF9CA3AF' } } };
+        row.height = 30;
       }
 
       else if (r.type === 'table-col-headers') {
+        tableStripingIndex = 0;
         row = worksheet.addRow(['', ...(r.headers || [])]);
+        row.height = 24;
         row.eachCell((cell, colNum) => {
           if (colNum > 1) {
-            cell.font = { bold: true, color: { argb: 'FF4B5563' } };
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9FAFB' } };
-            cell.border = { bottom: { style: 'medium', color: { argb: 'FFD1D5DB' } } };
+            cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4B5563' } }; // Dark Header
+            cell.alignment = { horizontal: 'center', vertical: 'middle' };
+            cell.border = {
+              top: { style: 'thin', color: { argb: 'FF374151' } },
+              left: { style: 'thin', color: { argb: 'FF374151' } },
+              right: { style: 'thin', color: { argb: 'FF374151' } },
+              bottom: { style: 'medium', color: { argb: 'FF374151' } }
+            };
           }
         });
       }
 
       else if (r.type === 'table-row') {
         row = worksheet.addRow(['', ...(r.values || [])]);
+        const isEve = tableStripingIndex % 2 === 0;
+        tableStripingIndex++;
+
+        row.height = 22;
+
         row.eachCell((cell, colNum) => {
           if (colNum > 1) {
-            const val = (r.values || [])[colNum - 2];
-            cell.value = val;
-            cell.border = { bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } } };
+            cell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+            cell.border = {
+              left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+              right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+              bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } }
+            };
 
-            if (typeof val === 'number') cell.font = { color: { argb: 'FF0284C7' } };
-            if (typeof val === 'boolean') {
+            if (isEve) {
+              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9FAFB' } };
+            }
+
+            const val = (r.values || [])[colNum - 2];
+
+            if (typeof val === 'number') {
+              cell.font = { color: { argb: 'FF0369A1' } };
+            }
+            else if (typeof val === 'boolean') {
               cell.value = val ? 'TRUE' : 'FALSE';
               cell.font = { color: { argb: 'FF7C3AED' }, bold: true };
-              cell.dataValidation = { type: 'list', allowBlank: false, formulae: ['"TRUE,FALSE"'] };
+              cell.alignment = { horizontal: 'center', vertical: 'middle' };
             }
           }
         });
