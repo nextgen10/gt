@@ -632,8 +632,15 @@ function App() {
     const rows: ExcelRow[] = [];
 
     const traverse = (obj: any, path: string, key: string, level: number) => {
+      // Heuristic: It's a table if:
+      // 1. It is an array of objects.
+      // 2. The objects are "flat" (values are primitives, not nested objects/arrays).
+      // This ensures complex structures render as Vertical Lists (Keys in same column).
       const isTable = Array.isArray(obj) && obj.length > 0 &&
-        obj.every((i: any) => i && typeof i === 'object' && !Array.isArray(i));
+        obj.every((i: any) => i && typeof i === 'object' && !Array.isArray(i)) &&
+        obj.every((row: any) => Object.values(row).every(v =>
+          v === null || v === undefined || typeof v !== 'object'
+        ));
 
       if (isTable) {
         rows.push({ type: 'table-header', path: path, label: key, level });
@@ -642,9 +649,15 @@ function App() {
         obj.forEach((row: any) => Object.keys(row).forEach(k => keys.add(k)));
         const colHeaders = Array.from(keys);
 
-        rows.push({ type: 'table-col-headers', path: '', label: '', headers: colHeaders, level: level + 1 });
-
+        // Iterate over each ROW in the table
         obj.forEach((rowObj: any, rowIndex: number) => {
+
+          // REPEAT HEADERS: Before every row, insert the column headers.
+          // This ensures that deep scrolling / nested content never loses context on what the columns are.
+          // We attach the table path to the headers so import knows which table these headers belong to.
+          rows.push({ type: 'table-col-headers', path: path, label: '', headers: colHeaders, level: level + 1 });
+
+          // Prepare the value summary for this row
           const rowVals = colHeaders.map(k => {
             const val = rowObj[k];
             if (val && typeof val === 'object') {
@@ -652,11 +665,15 @@ function App() {
             }
             return val;
           });
-          rows.push({ type: 'table-row', path: '', label: '', values: rowVals, level: level + 1 });
 
+          // Add the Data Row with explicit item path
+          const itemPath = path ? `${path}~[${rowIndex}]` : `[${rowIndex}]`;
+          rows.push({ type: 'table-row', path: itemPath, label: '', values: rowVals, level: level + 1 });
+
+          // Recursively traverse children (Nested Lists/Objects within this row)
           Object.entries(rowObj).forEach(([k, v]) => {
             if (v && typeof v === 'object') {
-              const childPath = path ? `${path}.${rowIndex}.${k}` : `${rowIndex}.${k}`;
+              const childPath = path ? `${path}~[${rowIndex}]~${encodeURIComponent(k)}` : `[${rowIndex}]~${encodeURIComponent(k)}`;
               traverse(v, childPath, k, level + 2);
             }
           });
@@ -665,8 +682,18 @@ function App() {
       }
 
       if (Array.isArray(obj)) {
+        if (obj.length === 0) {
+          // Explicitly render empty array as a field
+          rows.push({ type: 'field', path: path, label: key, value: '[]', level });
+          return;
+        }
+
+        if (key && key !== 'Root') {
+          rows.push({ type: 'table-header', path: path, label: key, level });
+          level++;
+        }
         obj.forEach((v: any, i: number) => {
-          traverse(v, path ? `${path}.${i}` : `${i}`, `Item ${i + 1}`, level);
+          traverse(v, path ? `${path}~[${i}]` : `[${i}]`, '', level); // No "Item X" label
         });
         return;
       }
@@ -678,7 +705,7 @@ function App() {
         }
 
         Object.entries(obj).forEach(([k, v]) => {
-          traverse(v, path ? `${path}.${k}` : k, k, level);
+          traverse(v, path ? `${path}~${encodeURIComponent(k)}` : encodeURIComponent(k), k, level);
         });
         return;
       }
@@ -691,10 +718,12 @@ function App() {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("Data", { views: [{ showGridLines: false }] });
 
-    const mainHeader = worksheet.addRow(['Structure', 'Value']);
-    mainHeader.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 12 };
-    mainHeader.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2937' } };
-    mainHeader.height = 30;
+
+    // HIDDEN METADATA COLUMN (Column 1)
+    // We will write a "Type|Path" string here.
+    // Import logic will read this to know exactly what to do.
+    worksheet.getColumn(1).hidden = true;
+    worksheet.getColumn(1).width = 0;
 
     worksheet.properties.outlineProperties = { summaryBelow: false, summaryRight: false };
 
@@ -702,24 +731,36 @@ function App() {
 
     rows.forEach(r => {
       let row: ExcelJS.Row;
-      const indentStr = "  ".repeat(r.level);
+      // Staircase Indentation: Content starts at column (1 + r.level + 1) = r.level + 2.
+      // Column 1 is Metadata.
+      const entryCol = r.level + 2;
+      const padding = new Array(r.level).fill('');
+
+      const metaString = `${r.type}|${r.path}`;
 
       if (r.type === 'field') {
-        row = worksheet.addRow([indentStr + r.label, r.value]);
+        // Field: [ META, ...padding, Label, Value ]
+        row = worksheet.addRow([metaString, ...padding, r.label, r.value]);
 
-        const pathCell = row.getCell(1);
+        const pathCell = row.getCell(entryCol);
         pathCell.font = { color: { argb: 'FF374151' }, bold: true, name: 'Calibri', size: 11 };
-        pathCell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+        pathCell.alignment = { vertical: 'middle', horizontal: 'left' };
 
         row.height = 22;
 
-        const valCell = row.getCell(2);
+        const valCell = row.getCell(entryCol + 1);
         valCell.alignment = { vertical: 'middle', wrapText: true, indent: 1 };
 
         // Subtle Separator
-        row.eachCell(c => c.border = { bottom: { style: 'dotted', color: { argb: 'FFCBD5E1' } } });
+        row.eachCell((c, colN) => { if (colN > 1) c.border = { bottom: { style: 'dotted', color: { argb: 'FFCBD5E1' } } } });
 
-        if (typeof r.value === 'boolean') {
+        if (r.value === null) {
+          valCell.value = 'null';
+          valCell.font = { color: { argb: 'FF9CA3AF' }, italic: true };
+        } else if (r.value === '') {
+          valCell.value = '""'; // Explicit empty string
+          valCell.font = { color: { argb: 'FF9CA3AF' }, italic: true };
+        } else if (typeof r.value === 'boolean') {
           valCell.value = r.value ? 'TRUE' : 'FALSE';
           valCell.font = { color: { argb: 'FF7C3AED' }, bold: true };
           valCell.dataValidation = { type: 'list', allowBlank: false, formulae: ['"TRUE,FALSE"'] };
@@ -732,8 +773,11 @@ function App() {
       }
 
       else if (r.type === 'table-header') {
-        row = worksheet.addRow([indentStr + r.label]);
-        const cell = row.getCell(1);
+        if (!r.label) return; // Skip empty section headers (e.g. array items)
+
+        // Table Name: [ META, ...padding, Label ]
+        row = worksheet.addRow([metaString, ...padding, r.label]);
+        const cell = row.getCell(entryCol);
         cell.font = { size: 12, bold: true, color: { argb: 'FF111827' } };
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } };
         cell.border = { top: { style: 'thin', color: { argb: 'FF9CA3AF' } } };
@@ -741,11 +785,12 @@ function App() {
       }
 
       else if (r.type === 'table-col-headers') {
+        // Headers: [ META, ...padding, H1, H2... ]
+        row = worksheet.addRow([metaString, ...padding, ...(r.headers || [])]);
         tableStripingIndex = 0;
-        row = worksheet.addRow(['', ...(r.headers || [])]);
         row.height = 24;
         row.eachCell((cell, colNum) => {
-          if (colNum > 1) {
+          if (colNum >= entryCol) {
             cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
             cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4B5563' } }; // Dark Header
             cell.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -760,14 +805,15 @@ function App() {
       }
 
       else if (r.type === 'table-row') {
-        row = worksheet.addRow(['', ...(r.values || [])]);
+        // Data Row: [ META, ...padding, V1, V2... ]
+        row = worksheet.addRow([metaString, ...padding, ...(r.values || [])]);
         const isEve = tableStripingIndex % 2 === 0;
         tableStripingIndex++;
 
         row.height = 22;
 
         row.eachCell((cell, colNum) => {
-          if (colNum > 1) {
+          if (colNum >= entryCol) {
             cell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
             cell.border = {
               left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
@@ -779,9 +825,14 @@ function App() {
               cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9FAFB' } };
             }
 
-            const val = (r.values || [])[colNum - 2];
+            const val = (r.values || [])[colNum - entryCol];
 
-            if (typeof val === 'number') {
+            if (val === null) {
+              cell.value = 'null';
+              cell.font = { color: { argb: 'FF9CA3AF' }, italic: true };
+              cell.alignment = { horizontal: 'center', vertical: 'middle' };
+            }
+            else if (typeof val === 'number') {
               cell.font = { color: { argb: 'FF0369A1' } };
             }
             else if (typeof val === 'boolean') {
@@ -800,6 +851,19 @@ function App() {
 
     worksheet.getColumn(1).width = 60;
     worksheet.getColumn(2).width = 40;
+
+    // SCHEMA PRESERVATION
+    // We store the original JSON in a hidden sheet to use as the "Base" for import.
+    // This ensures that if users delete rows/cells, the structure/keys remain present.
+    const schemaSheet = workbook.addWorksheet("_Schema");
+    schemaSheet.state = 'hidden';
+    const jsonString = JSON.stringify(parsedData);
+    // Excel cells have a char limit (32k). We might need to split chunks if it's huge.
+    // For now, assuming reasonable size, but let's chunk it just in case.
+    const CHUNK_SIZE = 30000;
+    for (let i = 0; i < jsonString.length; i += CHUNK_SIZE) {
+      schemaSheet.addRow([jsonString.substring(i, i + CHUNK_SIZE)]);
+    }
 
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
@@ -829,157 +893,168 @@ function App() {
         console.log("Importing Sheet:", worksheet.name);
 
         let newData: any = undefined;
-        let stack: { obj: any; level: number; key?: string }[] = [];
-        let tableCtx: { headers: string[]; array: any[] } | null = null;
-        let lastObj: any = null;
 
-        const getIndentLevel = (row: ExcelJS.Row, text: string) => {
-          let spaces = 0;
-          for (let char of text) {
-            if (char === ' ') spaces++;
-            else break;
+        // Try to read Schema Sheet
+        const schemaSheet = workbook.getWorksheet("_Schema");
+        if (schemaSheet) {
+          try {
+            let fullJson = "";
+            schemaSheet.eachRow((row) => {
+              fullJson += (row.getCell(1).value || "").toString();
+            });
+            if (fullJson) {
+              newData = JSON.parse(fullJson);
+              console.log("Loaded Schema Template from Excel");
+            }
+          } catch (e) {
+            console.warn("Could not load schema from hidden sheet", e);
           }
-          if (spaces > 0) return Math.floor(spaces / 2);
-          return (row.outlineLevel || 0);
-        };
+        }
 
-        const initRoot = (isArray: boolean) => {
-          if (newData !== undefined) return;
-          newData = isArray ? [] : {};
-          stack = [{ obj: newData, level: -1 }];
-          lastObj = newData;
-        };
+        // Legacy variables removed: stack, lastObj, lastRowObj
+        // Helper functions removed: getIndentLevel, initRoot
+        // Deterministic Import activated via Meta Column 1.
+        let tableCtx: any = null; // Shim for import logic
 
         worksheet.eachRow((row, rowNumber) => {
           if (rowNumber === 1) return;
 
-          const cell1 = row.getCell(1);
-          const cell2 = row.getCell(2);
+          // Deterministic Import using Hidden Metadata (Column 1)
+          const metaCell = row.getCell(1).value;
+          if (!metaCell || typeof metaCell !== 'string') return;
 
-          let label = cell1.text || "";
-          let val: any = cell2.value;
+          const [type, path] = metaCell.split('|');
+          if (!path) return;
 
-          const hasInputLabel = label.trim().length > 0;
+          // Helper to set value at path
+          const setValue = (root: any, path: string, value: any) => {
+            const parts = path.split('~');
+            let current = root;
 
-          if (tableCtx && hasInputLabel) {
-            const looksLikeID = !isNaN(Number(label.trim()));
-            console.warn(`Row ${rowNumber}: Found label '${label}' inside table context. Ending table.`);
+            for (let i = 0; i < parts.length - 1; i++) {
+              let part = decodeURIComponent(parts[i]);
+              // Strip brackets for access: "[0]" -> "0"
+              if (part.startsWith('[') && part.endsWith(']')) {
+                part = part.slice(1, -1);
+              }
 
-            if (looksLikeID && (val !== null && val !== undefined)) {
-              const confirmFix = window.confirm(
-                `Row ${rowNumber} seems to have data in the first column ('${label}').\n` +
-                `Inside a table, the first column (Structure) should be empty.\n` +
-                `Did you mean to put '${label}' as the value for '${tableCtx.headers[0]}'?\n\n` +
-                `Click OK to treat it as a data row (Auto-Fit).\n` +
-                `Click Cancel to treat it as a new Section (End Table).`
-              );
-              if (confirmFix) {
-                const rowObj: any = {};
-                rowObj[tableCtx.headers[0]] = Number(label.trim());
-                if (tableCtx.headers[1]) {
-                  if (typeof val === 'object' && 'text' in val) val = val.text;
-                  rowObj[tableCtx.headers[1]] = val;
-                }
-                tableCtx.headers.slice(2).forEach((h, i) => {
-                  const c = row.getCell(i + 3);
-                  let v = c.value;
-                  if (v && typeof v === 'object' && 'text' in v) v = (v as any).text;
-                  rowObj[h] = v;
-                });
+              const nextPart = decodeURIComponent(parts[i + 1]);
+              // Array Detection: If next part is enclosed in brackets, it MUST be an array.
+              // e.g. "items" followed by "[0]"
+              const isNextArray = nextPart.startsWith('[') && nextPart.endsWith(']');
 
-                tableCtx.array.push(rowObj);
+              if (current[part] === undefined) {
+                current[part] = isNextArray ? [] : {};
+              }
+              current = current[part];
+            }
+
+            let lastPart = decodeURIComponent(parts[parts.length - 1]);
+            if (lastPart.startsWith('[') && lastPart.endsWith(']')) {
+              lastPart = lastPart.slice(1, -1);
+            }
+
+            // Handle explicit nulls and empty strings
+            if (typeof value === 'string') {
+              const trimmed = value.trim();
+              if (trimmed === 'null') {
+                current[lastPart] = null;
+                return;
+              }
+              if (trimmed === '""') {
+                current[lastPart] = "";
+                return;
+              }
+              if (trimmed === '[]') {
+                current[lastPart] = [];
                 return;
               }
             }
+
+            // Type conversion
+            if (value !== undefined && value !== null) {
+              if (String(value).toUpperCase() === 'TRUE') value = true;
+              else if (String(value).toUpperCase() === 'FALSE') value = false;
+            }
+            current[lastPart] = value;
+          };
+
+          if (newData === undefined) {
+            // Heuristic: If first path starts with '[', assume Array Root
+            const isArrayRoot = path.startsWith('[');
+            newData = isArrayRoot ? [] : {};
           }
 
-          if (hasInputLabel) {
-            tableCtx = null;
-            const level = getIndentLevel(row, label);
-            const key = label.trim();
+          if (type === 'field') {
+            // Field: Value is in the cell after the label
+            // Staircase: Label is in col (level+2), Value is (level+3) of traverse logic
+            // But we don't care about visual level! We have the path.
+            // We just need to find the value.
+            // In export: row = [meta, ...padding, Label, Value]
+            // So Value is the LAST non-empty cell? Or specifically the one after Label.
+            // Let's reliably find the value column.
+            // Export: entryCol = level + 2. Value is at entryCol + 1.
+            // We can scan the row for the last non-empty value? 
+            // Or safer: The value is strictly at the end? 
+            // Let's look for the 2nd valid text cell (1st is Label, 2nd is Value) after metadata.
+            let val: any = undefined;
+            let foundLabel = false;
+            row.eachCell((cell, colNum) => {
+              if (colNum === 1) return; // Skip Meta
+              const v = cell.value;
+              if (v !== null && v !== undefined && String(v).trim() !== '') {
+                if (!foundLabel) foundLabel = true;
+                else {
+                  val = (typeof v === 'object' && 'text' in v) ? (v as any).text : v;
+                }
+              }
+            });
+            setValue(newData, path, val);
+          }
 
-            initRoot(false);
+          else if (type === 'table-col-headers') {
+            // We need to map Columns to Keys for the upcoming rows.
+            // Meta: "table-col-headers|path.to.array"
+            // Headers are in the row.
+            // We store this mapping for the Table Path.
+            if (!tableCtx) tableCtx = {}; // logic shim, we might store global map
+            // Actually, we can just process Table Rows independently if we know the headers.
+            // But Table Rows don't duplicate headers in every row in Excel (visually).
+            // But wait, my Export logic wrote `table-col-headers` BEFORE every row group?
+            // No, my export logic logic `traverse` writes headers ONCE per table usually?
+            // Ah, my `traverse` logic: `rows.push({ type: 'table-col-headers', ... })` inside the loop?
+            // YES! `rows.push` is INSIDE `obj.forEach`! 
+            // My previous change for "Repeated Headers" means headers appear before EVERY row.
+            // This is great for parsing!
+            // We just need to capture the column-to-key mapping for this row.
+            const mapping: { [col: number]: string } = {};
+            row.eachCell((cell, colNum) => {
+              if (colNum === 1) return;
+              const v = cell.value?.toString().trim();
+              if (v) mapping[colNum] = v;
+            });
+            // We assume the NEXT row is the data row corresponding to these headers.
+            // We can store it in a temporary variable used by the next row iteration.
+            (row as any)._headerMapping = mapping;
+          }
 
-            while (stack.length > 1 && stack[stack.length - 1].level >= level) {
-              stack.pop();
-            }
+          else if (type === 'table-row') {
+            // Meta: "table-row|path.to.item.0"
+            // Use mapping from previous row (which was header)
+            const prevRow = worksheet.getRow(rowNumber - 1);
+            const mapping = (prevRow as any)._headerMapping;
 
-            const parentCtx = stack[stack.length - 1];
-            const parent = parentCtx.obj;
-
-            let effectiveKey: string | number = key;
-            if (Array.isArray(parent)) effectiveKey = parent.length;
-
-            const isValueEmpty = val === undefined || val === null || (typeof val === 'string' && val.trim() === '');
-
-            if (!isValueEmpty) {
-              if (typeof val === 'object' && 'text' in val) val = val.text;
-              if (String(val).toUpperCase() === 'TRUE') val = true;
-              if (String(val).toUpperCase() === 'FALSE') val = false;
-
-              if (Array.isArray(parent)) parent.push(val);
-              else parent[effectiveKey] = val;
-            } else {
-              const newObj: any = {};
-              if (Array.isArray(parent)) parent.push(newObj);
-              else parent[effectiveKey] = newObj;
-
-              stack.push({ obj: newObj, level, key: String(effectiveKey) });
-              lastObj = newObj;
-            }
-
-          } else {
-            if (newData === undefined) initRoot(true);
-
-            if (!tableCtx) {
-              const headers: string[] = [];
+            if (mapping) {
               row.eachCell((cell, colNum) => {
-                if (colNum > 1) headers.push(cell.text.trim());
-              });
-
-              if (headers.length > 0) {
-                const parentCtx = stack[stack.length - 1];
-                let targetArray: any[] = [];
-
-                if (parentCtx && parentCtx.obj === lastObj && !Array.isArray(parentCtx.obj)) {
-                  targetArray = [];
-                  if (stack.length >= 2) {
-                    const gp = stack[stack.length - 2].obj;
-                    const key = parentCtx.key;
-                    if (key !== undefined) {
-                      if (Array.isArray(gp)) gp[Number(key)] = targetArray;
-                      else gp[key] = targetArray;
-                    }
-                  } else {
-                    newData = targetArray;
+                if (colNum === 1) return;
+                const key = mapping[colNum];
+                if (key) {
+                  let val = (typeof cell.value === 'object' && 'text' in cell.value) ? (cell.value as any).text : cell.value;
+                  if (val !== undefined && val !== null && String(val).trim() !== '') {
+                    setValue(newData, `${path}~${key}`, val);
                   }
-                  parentCtx.obj = targetArray;
-                } else if (Array.isArray(parentCtx.obj)) {
-                  targetArray = parentCtx.obj;
-                }
-
-                tableCtx = { headers, array: targetArray };
-              }
-            } else {
-              const rowObj: any = {};
-              let hasData = false;
-
-              tableCtx.headers.forEach((h, idx) => {
-                const cell = row.getCell(idx + 2);
-                let v = cell.value;
-                if (v && typeof v === 'object' && 'text' in v) v = (v as any).text;
-
-                if (v !== undefined && v !== null && String(v).trim() !== '') {
-                  if (String(v).toUpperCase() === 'TRUE') v = true;
-                  if (String(v).toUpperCase() === 'FALSE') v = false;
-                  rowObj[h] = v;
-                  hasData = true;
                 }
               });
-
-              if (hasData) {
-                tableCtx.array.push(rowObj);
-              }
             }
           }
         });
