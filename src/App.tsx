@@ -894,8 +894,10 @@ function App() {
 
         let newData: any = undefined;
 
-        // Try to read Schema Sheet
+        // Initialize newData as empty to ensure we build from Excel rows strictly first
+        // We will use the schemaSheet later to backfill missing keys.
         const schemaSheet = workbook.getWorksheet("_Schema");
+        let schemaData: any = null;
         if (schemaSheet) {
           try {
             let fullJson = "";
@@ -903,8 +905,8 @@ function App() {
               fullJson += (row.getCell(1).value || "").toString();
             });
             if (fullJson) {
-              newData = JSON.parse(fullJson);
-              console.log("Loaded Schema Template from Excel");
+              schemaData = JSON.parse(fullJson);
+              console.log("Loaded Schema Template for verification");
             }
           } catch (e) {
             console.warn("Could not load schema from hidden sheet", e);
@@ -914,7 +916,11 @@ function App() {
         // Legacy variables removed: stack, lastObj, lastRowObj
         // Helper functions removed: getIndentLevel, initRoot
         // Deterministic Import activated via Meta Column 1.
-        let tableCtx: any = null; // Shim for import logic
+
+
+        // State for Array Collision Detection
+        // Map<PathPrefix, { realIndex: number, lastSeenExcelIndex: number }>
+        const arrayIndexMap = new Map<string, { realIndex: number, lastSeenExcelIndex: number }>();
 
         worksheet.eachRow((row, rowNumber) => {
           if (rowNumber === 1) return;
@@ -926,81 +932,116 @@ function App() {
           const [type, path] = metaCell.split('|');
           if (!path) return;
 
-          // Helper to set value at path
-          const setValue = (root: any, path: string, value: any) => {
-            const parts = path.split('~');
-            let current = root;
+          // Helper to set value at path with Collision Detection and Retry
+          const setValue = (rootMap: any, rawPath: string, val: any) => {
+            let retries = 0;
+            let success = false;
 
-            for (let i = 0; i < parts.length - 1; i++) {
-              let part = decodeURIComponent(parts[i]);
-              // Strip brackets for access: "[0]" -> "0"
-              if (part.startsWith('[') && part.endsWith(']')) {
-                part = part.slice(1, -1);
+            while (!success && retries < 5) {
+              const parts = rawPath.split('~');
+              let current = rootMap;
+              let currentPathPrefix = "";
+              let collisionOccurred = false;
+
+              // Track the Deepest Array encountered to bump its index on collision
+              let deepestArrayRef: { mapKey: string, mapValue: { realIndex: number } } | null = null;
+
+              // 1. Traverse and Build/Resolve Path
+              for (let i = 0; i < parts.length - 1; i++) {
+                let part = decodeURIComponent(parts[i]);
+
+                // Handle Array Indices
+                if (part.startsWith('[') && part.endsWith(']')) {
+                  // Check mapping
+                  const arrayMapKey = currentPathPrefix;
+                  let mapping = arrayIndexMap.get(arrayMapKey);
+                  const excelIdx = parseInt(part.slice(1, -1));
+
+                  if (!mapping) {
+                    mapping = { realIndex: excelIdx, lastSeenExcelIndex: excelIdx };
+                    arrayIndexMap.set(arrayMapKey, mapping);
+                  }
+
+                  // Capture this as a potential collision target
+                  deepestArrayRef = { mapKey: arrayMapKey, mapValue: mapping };
+
+                  // Use mapped index
+                  part = "" + mapping.realIndex;
+                } else {
+                  if (part.startsWith('[') && part.endsWith(']')) part = part.slice(1, -1);
+                }
+
+                currentPathPrefix += (currentPathPrefix ? "~" : "") + part; // Use Resolved Part in prefix?? 
+                // NO! The Map Key MUST be based on the RAW path structure (or at least consistent).
+                // But wait, `arrayIndexMap` is keyed by the *path so far*.
+                // If we change `part` to `1` (from `[0]`), the *next* array nested inside will have a prefix `...~items~1`.
+                // This distinguishes it from `...~items~0`. This is GOOD.
+                // So we DO want to accumulate the resolved path.
+
+                // Ensure container exists
+                const nextPartEncoded = parts[i + 1];
+                const nextPart = decodeURIComponent(nextPartEncoded);
+                const isNextArray = nextPart.startsWith('[') && nextPart.endsWith(']');
+
+                if (current[part] === undefined) {
+                  current[part] = isNextArray ? [] : {};
+                }
+                current = current[part];
               }
 
-              const nextPart = decodeURIComponent(parts[i + 1]);
-              // Array Detection: If next part is enclosed in brackets, it MUST be an array.
-              // e.g. "items" followed by "[0]"
-              const isNextArray = nextPart.startsWith('[') && nextPart.endsWith(']');
+              // 2. Check Leaf for Collision
+              let lastPart = decodeURIComponent(parts[parts.length - 1]);
+              if (lastPart.startsWith('[') && lastPart.endsWith(']')) lastPart = lastPart.slice(1, -1);
 
-              if (current[part] === undefined) {
-                current[part] = isNextArray ? [] : {};
+              if (current[lastPart] !== undefined) {
+                // Collision!
+                // If we are overwriting an existing key, it means we likely need to bump the array index.
+                if (deepestArrayRef) {
+                  // Bump the index
+                  deepestArrayRef.mapValue.realIndex++;
+                  // console.log(`Collision at ${rawPath}. Bumping index for ${deepestArrayRef.mapKey} to ${deepestArrayRef.mapValue.realIndex}`);
+                  collisionOccurred = true;
+                } else {
+                  // Collision at root or non-array path? Just overwrite.
+                  // console.warn("Collision at non-array path:", rawPath);
+                }
               }
-              current = current[part];
+
+              if (collisionOccurred) {
+                retries++;
+                continue; // Retry the loop with new index
+              }
+
+              // 3. Write Value
+              // Verify we are not writing undefined if not intended
+              // Handle Explicit Empty Values
+              if (typeof val === 'string') {
+                const t = val.trim();
+                if (t === 'null') { current[lastPart] = null; success = true; return; }
+                if (t === '""') { current[lastPart] = ""; success = true; return; }
+                if (t === '[]') { current[lastPart] = []; success = true; return; }
+              }
+
+              if (val !== undefined && val !== null) {
+                if (String(val).toUpperCase() === 'TRUE') val = true;
+                else if (String(val).toUpperCase() === 'FALSE') val = false;
+              }
+              current[lastPart] = val;
+              success = true;
             }
-
-            let lastPart = decodeURIComponent(parts[parts.length - 1]);
-            if (lastPart.startsWith('[') && lastPart.endsWith(']')) {
-              lastPart = lastPart.slice(1, -1);
-            }
-
-            // Handle explicit nulls and empty strings
-            if (typeof value === 'string') {
-              const trimmed = value.trim();
-              if (trimmed === 'null') {
-                current[lastPart] = null;
-                return;
-              }
-              if (trimmed === '""') {
-                current[lastPart] = "";
-                return;
-              }
-              if (trimmed === '[]') {
-                current[lastPart] = [];
-                return;
-              }
-            }
-
-            // Type conversion
-            if (value !== undefined && value !== null) {
-              if (String(value).toUpperCase() === 'TRUE') value = true;
-              else if (String(value).toUpperCase() === 'FALSE') value = false;
-            }
-            current[lastPart] = value;
           };
 
           if (newData === undefined) {
-            // Heuristic: If first path starts with '[', assume Array Root
             const isArrayRoot = path.startsWith('[');
             newData = isArrayRoot ? [] : {};
           }
 
           if (type === 'field') {
-            // Field: Value is in the cell after the label
-            // Staircase: Label is in col (level+2), Value is (level+3) of traverse logic
-            // But we don't care about visual level! We have the path.
-            // We just need to find the value.
-            // In export: row = [meta, ...padding, Label, Value]
-            // So Value is the LAST non-empty cell? Or specifically the one after Label.
-            // Let's reliably find the value column.
-            // Export: entryCol = level + 2. Value is at entryCol + 1.
-            // We can scan the row for the last non-empty value? 
-            // Or safer: The value is strictly at the end? 
-            // Let's look for the 2nd valid text cell (1st is Label, 2nd is Value) after metadata.
+            // Find value cell (after label)
             let val: any = undefined;
             let foundLabel = false;
             row.eachCell((cell, colNum) => {
-              if (colNum === 1) return; // Skip Meta
+              if (colNum === 1) return;
               const v = cell.value;
               if (v !== null && v !== undefined && String(v).trim() !== '') {
                 if (!foundLabel) foundLabel = true;
@@ -1013,37 +1054,18 @@ function App() {
           }
 
           else if (type === 'table-col-headers') {
-            // We need to map Columns to Keys for the upcoming rows.
-            // Meta: "table-col-headers|path.to.array"
-            // Headers are in the row.
-            // We store this mapping for the Table Path.
-            if (!tableCtx) tableCtx = {}; // logic shim, we might store global map
-            // Actually, we can just process Table Rows independently if we know the headers.
-            // But Table Rows don't duplicate headers in every row in Excel (visually).
-            // But wait, my Export logic wrote `table-col-headers` BEFORE every row group?
-            // No, my export logic logic `traverse` writes headers ONCE per table usually?
-            // Ah, my `traverse` logic: `rows.push({ type: 'table-col-headers', ... })` inside the loop?
-            // YES! `rows.push` is INSIDE `obj.forEach`! 
-            // My previous change for "Repeated Headers" means headers appear before EVERY row.
-            // This is great for parsing!
-            // We just need to capture the column-to-key mapping for this row.
             const mapping: { [col: number]: string } = {};
             row.eachCell((cell, colNum) => {
               if (colNum === 1) return;
               const v = cell.value?.toString().trim();
               if (v) mapping[colNum] = v;
             });
-            // We assume the NEXT row is the data row corresponding to these headers.
-            // We can store it in a temporary variable used by the next row iteration.
             (row as any)._headerMapping = mapping;
           }
 
           else if (type === 'table-row') {
-            // Meta: "table-row|path.to.item.0"
-            // Use mapping from previous row (which was header)
             const prevRow = worksheet.getRow(rowNumber - 1);
             const mapping = (prevRow as any)._headerMapping;
-
             if (mapping) {
               row.eachCell((cell, colNum) => {
                 if (colNum === 1) return;
@@ -1058,6 +1080,39 @@ function App() {
             }
           }
         });
+
+        // Schema Backfill Logic
+        if (schemaData && newData) {
+          const mergeSchema = (target: any, schema: any) => {
+            if (!target || typeof target !== 'object' || target === null) return;
+            if (!schema || typeof schema !== 'object' || schema === null) return;
+
+            Object.keys(schema).forEach(key => {
+              // If target is Array, we don't backfill keys normally (indexes),
+              // BUT if schema has items, we might want to validate structure.
+              // For now, only backfill Objects.
+              if (Array.isArray(target)) return;
+
+              if (target[key] === undefined) {
+                // Missing key -> Fill from schema
+                // Deep clone the schema value (or at least structure)
+                if (typeof schema[key] === 'object' && schema[key] !== null) {
+                  target[key] = Array.isArray(schema[key]) ? [] : {};
+                  // Recurse to fill children
+                  mergeSchema(target[key], schema[key]);
+                } else {
+                  // Primitive default
+                  target[key] = schema[key];
+                }
+              } else {
+                // Exists -> Recurse
+                mergeSchema(target[key], schema[key]);
+              }
+            });
+          };
+          // Backfill starting at root
+          mergeSchema(newData, schemaData);
+        }
 
         if (newData) {
           setParsedData(newData);
